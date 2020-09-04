@@ -28,6 +28,7 @@ private:
     int _value;
 };
 
+template <typename T>
 struct Task
 {
     struct promise_type;
@@ -35,37 +36,50 @@ struct Task
 
     struct promise_type
     {
-        auto get_return_object() { return Task{}; }
-        //auto get_return_object() { return Task{co_handle::from_promise(*this)}; }
+        //auto get_return_object() { return Task{}; }
+        auto get_return_object() { return Task{co_handle::from_promise(*this)}; }
         auto initial_suspend() { return suspend_never{}; }
         auto final_suspend() { return suspend_never{}; }
         void unhandled_exception() { std::terminate(); }
-        void return_void() {}
+        auto return_value(T v)
+        {
+            value = v;
+            return suspend_never{};
+        }
+
+        T value;
     };
 
-    // ~Task()
-    // {
-    //     //handle.destroy();
-    //     cout << "~Task() ..." << endl;
-    // }
+    T get()
+    {
+        return handle.promise().value;
+    }
+
+    ~Task()
+    {
+        //handle.destroy();
+        cout << "~Task() ..." << endl;
+    }
 
     co_handle handle;
 };
 
-Task Add100ByCoroutine(int init)
+Task<int> Add100ByCoroutine(int init)
 {
     int ret = co_await Add100Awaitable(init);
     ret = co_await Add100Awaitable(ret);
     ret = co_await Add100Awaitable(ret);
 
-    cout << "result : " << ret << endl;
+    co_return ret;
 }
 
 int main()
 {
-    Add100ByCoroutine(10);
+    auto ret = Add100ByCoroutine(10);
 
     getchar();
+
+    cout << "result : " << ret.get() << endl;
 
     return 0;
 }
