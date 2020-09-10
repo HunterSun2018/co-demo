@@ -16,7 +16,6 @@ struct Add100Awaitable
     {
         std::thread([this, handle]() {
             std::this_thread::sleep_for(std::chrono::seconds(1));
-            std::cout << "Add100ByCallback: " << this->_value << std::endl;
 
             this->_value += 100;
 
@@ -44,7 +43,7 @@ struct Task
 
         void unhandled_exception() { std::terminate(); }
 
-        std::suspend_always yield_value(T v)
+        suspend_always yield_value(T v)
         {
             value = std::move(v);
             return {};
@@ -74,8 +73,14 @@ struct Task
     struct iter
     {
         explicit iter(co_handle h) : handle(h) {}
-        void operator++() { /*handle.resume();*/ }
+
+        void operator++()
+        {
+            handle.resume();
+        }
+
         T operator*() const { return handle.promise().value; }
+
         bool operator==(std::default_sentinel_t) const { return handle.done(); }
 
     private:
@@ -96,70 +101,21 @@ struct Task
 Task<int> Add100ByCoroutine(int init)
 {
     int ret = co_await Add100Awaitable(init);
+    cout << "ret = " << ret << endl;
+
     ret = co_await Add100Awaitable(ret);
+    cout << "ret = " << ret << endl;
+
     ret = co_await Add100Awaitable(ret);
+    cout << "ret = " << ret << endl;
 
     for (int i = 0; i < 5; i++)
-        co_yield co_await Add100Awaitable(ret);
+    {
+        ret = co_await Add100Awaitable(ret);
+        co_yield ret;
+    }
 
     co_return ret;
-}
-
-template <class T>
-struct generator
-{
-    struct promise_type
-    {
-        auto get_return_object()
-        {
-            return generator(std::coroutine_handle<promise_type>::from_promise(*this));
-        }
-        std::suspend_always initial_suspend() { return {}; }
-        std::suspend_always final_suspend() noexcept { return {}; }
-        void unhandled_exception() { throw; }
-        std::suspend_always yield_value(T value)
-        {
-            current_value = std::move(value);
-            return {};
-        }
-        void await_transform() = delete; // disallow co_await in generator coroutines
-        T current_value;
-    };
-
-    generator(std::coroutine_handle<promise_type> h) : coro(h) {}
-    generator(generator &&other) : coro(other.coro) { other.coro = {}; }
-    ~generator()
-    {
-        if (coro)
-            coro.destroy();
-    }
-
-    // range-based for support
-    struct iter
-    {
-        explicit iter(std::coroutine_handle<promise_type> h) : coro(h) {}
-        void operator++() { /*coro.resume();*/ }
-        T operator*() const { return coro.promise().current_value; }
-        bool operator==(std::default_sentinel_t) const { return coro.done(); }
-
-    private:
-        std::coroutine_handle<promise_type> coro;
-    };
-    iter begin()
-    {
-        coro.resume();
-        return iter(coro);
-    }
-    std::default_sentinel_t end() { return {}; }
-
-private:
-    std::coroutine_handle<promise_type> coro;
-};
-
-generator<int> ints(int x)
-{
-    for (int i = 0; i < x; ++i)
-        co_yield i;
 }
 
 int main()
@@ -169,10 +125,12 @@ int main()
 
     auto ret = Add100ByCoroutine(10);
 
-    for(auto i : ret)
-        cout << i << endl;
+    cout << "Add100ByCoroutine is running in coroutine." << endl;
 
     getchar();
+
+    for (auto i : ret)
+        cout << i << endl;
 
     cout << "result : " << ret.get() << endl;
 
