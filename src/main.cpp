@@ -4,12 +4,15 @@
 #include <thread>
 #include <functional>
 //#include <ranges>
+#include "co_helper.hpp"
 
 using namespace std;
+using namespace co_helper;
 
 struct Add100Awaitable
 {
     Add100Awaitable(int init) : _value(init) {}
+
     bool await_ready() const { return false; }
     int await_resume() { return _value; }
     void await_suspend(coroutine_handle<> handle)
@@ -28,77 +31,7 @@ private:
     int _value;
 };
 
-template <typename T>
-struct Task
-{
-    struct promise_type;
-    using co_handle = coroutine_handle<promise_type>;
-
-    struct promise_type
-    {
-        //auto get_return_object() { return Task{}; }
-        auto get_return_object() { return Task{co_handle::from_promise(*this)}; }
-        auto initial_suspend() { return suspend_never{}; }
-        auto final_suspend() { return suspend_never{}; }
-
-        void unhandled_exception() { std::terminate(); }
-
-        suspend_always yield_value(T v)
-        {
-            value = std::move(v);
-            return {};
-        }
-
-        auto return_value(T v)
-        {
-            value = v;
-            return suspend_never{};
-        }
-
-        T value;
-    };
-
-    T get()
-    {
-        return handle.promise().value;
-    }
-
-    ~Task()
-    {
-        //handle.destroy();
-        //cout << "~Task() ..." << endl;
-    }
-
-    // range-based for support
-    struct iter
-    {
-        explicit iter(co_handle h) : handle(h) {}
-
-        void operator++()
-        {
-            handle.resume();
-        }
-
-        T operator*() const { return handle.promise().value; }
-
-        bool operator==(std::default_sentinel_t) const { return handle.done(); }
-
-    private:
-        co_handle handle;
-    };
-
-    iter begin()
-    {
-        //handle.resume();
-        return iter(handle);
-    }
-
-    std::default_sentinel_t end() { return {}; }
-
-    co_handle handle;
-};
-
-Task<int> Add100ByCoroutine(int init)
+Task<int> co_add100(int init)
 {
     int ret = co_await Add100Awaitable(init);
     cout << "ret = " << ret << endl;
@@ -109,30 +42,41 @@ Task<int> Add100ByCoroutine(int init)
     ret = co_await Add100Awaitable(ret);
     cout << "ret = " << ret << endl;
 
-    for (int i = 0; i < 5; i++)
-    {
-        ret = co_await Add100Awaitable(ret);
-        co_yield ret;
-    }
-
     co_return ret;
+}
+///
+/// calculate fibonacci numbers
+///
+Generator<uint64_t> fibonacci()
+{
+    uint64_t a = 0, b = 1;
+    while (true)
+    {
+        co_yield b;
+        auto tmp = a;
+        a = b;
+        b += tmp;
+    }
 }
 
 int main()
 {
-    // for (auto i : ints(5))
-    //     std::cout << i << '\n';
+    auto ret = co_add100(10);
 
-    auto ret = Add100ByCoroutine(10);
-
-    cout << "Add100ByCoroutine is running in coroutine." << endl;
+    cout << "co_add100 is running in coroutine." << endl;
 
     getchar();
 
-    for (auto i : ret)
-        cout << i << endl;
-
     cout << "result : " << ret.get() << endl;
+
+    auto fibs = fibonacci();
+
+    for (auto i : fibs)
+    {
+        if (i > 1'000'000)
+            break;
+        cout << i << endl;
+    }
 
     return 0;
 }
